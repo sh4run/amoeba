@@ -1,0 +1,36 @@
+{
+    "mode": "server",
+    "server": {
+        "address": {
+            "ip": "::0",
+            "port": 9191
+        },
+        "protocol": "amoeba",
+        "amoeba": {
+            "private-key":"testkey",
+            "scramble-length":88         
+        }
+    },
+    "user": [
+        {
+            "user-name": "userA",
+            "password":  "password-user-a"
+        },
+        {
+            "user-name": "userB",
+            "password":  "password-user-B"        
+        },
+        {
+            "user-name": "userc",
+            "password":  "password-user-c"
+        },
+        {
+            "user-name": "userd",
+            "password":  "password-user-aa"
+        },
+        {
+            "user-name": "usere",
+            "password":  "password-user-ddd"                                                          
+        }         
+    ]
+}

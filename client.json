@@ -1,0 +1,37 @@
+{
+    "mode": "client",
+    "client": {
+        "remote":  [
+            {
+                "name": "server-a",
+                "address": {
+                     "ip": "127.0.0.1",
+                     "port": 9191
+                },
+                "protocol": "amoeba",
+                "amoeba": {
+                     "public-key": "testkey.pub.pem",
+                     "scramble-length": 88
+                },
+                "user" : "userA"
+            }
+        ],
+        "local" : {
+            "address": {
+                "ip":  "0.0.0.0",
+                "port": 5566
+            },        
+            "protocol": "socks5"
+        }
+    },
+    "user": [
+        {
+            "user-name": "userA",
+            "password":  "password-user-a"
+        },
+        {
+            "user-name": "usere",
+            "password":  "password-user-ddd"                                                          
+        }         
+    ]
+}
