@@ -1051,7 +1051,7 @@ amoeba_decrypt_data(crypto_stream_t *cs,
 
     output = netbuf_alloc(STREAM_BUF_LEN);
     if (!output) {
-        return processed;
+        return -1;
     }
 
     while (left > 2) {

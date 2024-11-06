@@ -438,7 +438,19 @@ static jcfg_system_t *parse_config(const char *input)
         log_error("JSON config: mode not found or not valid");
         goto parse_error;
     }
-    
+
+    cJSON *cap = cJSON_GetObjectItemCaseSensitive(cfg_json, "memory-cap");
+    if (cap && cJSON_IsNumber(cap)) {
+        cfg->memory_cap = (uint32_t)cJSON_GetNumberValue(cap);
+    } else {
+        /* assign default value */
+        if (cfg->mode == server_mode) {
+            cfg->memory_cap = 14;
+        } else {
+            cfg->memory_cap = 4;
+        }
+    }
+
     module = cJSON_GetObjectItemCaseSensitive(cfg_json, mode_string);
     if (!module) {
         log_error("JSON config : %s config not found.", mode_string);

@@ -30,9 +30,11 @@ netbuf_t *netbuf_alloc(int len)
     int l = len;
     l += sizeof(netbuf_t);
     nb = (netbuf_t *)mempool_alloc(&l);
-    nb->offset = nb->len = 0;
-    nb->elem.next = NULL;
-    nb->buf_len = l - sizeof(netbuf_t);
+    if (nb) {
+        nb->offset = nb->len = 0;
+        nb->elem.next = NULL;
+        nb->buf_len = l - sizeof(netbuf_t);
+    }
     return nb;
 }
 

@@ -73,6 +73,7 @@ typedef struct {
 
 typedef struct {
     jcfg_mode_t   mode;
+    uint32_t      memory_cap;
     union {
         jcfg_client_t client_cfg;
         jcfg_server_t server_cfg;

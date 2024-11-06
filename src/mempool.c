@@ -16,7 +16,7 @@
 #define BUF128_NUM   256
 #define BUF320_NUM   256
 #define BUF640_NUM   32
-#define BUF6K_NUM    256
+#define BUF6K_NUM    512
 #define BUFMAX_NUM   32
 
 #define BUF128_SIZE  128
@@ -27,9 +27,9 @@
 
 typedef struct {
     FixedMemPool  *pool;
-    uint64_t      alloc_num;
-    uint64_t      free_num;
-    uint64_t      diff_max;
+    uint32_t      used_num;
+    uint32_t      used_max;
+    uint32_t      max;
 } netbuf_pool_t;
 
 typedef struct {
@@ -46,28 +46,27 @@ static netbuf_pool_t netbuf_pool_640;
 static netbuf_pool_t netbuf_pool_6K;
 static netbuf_pool_t netbuf_pool_max;
 
-static uint64_t outbound_alloc;
-static uint64_t outbound_free;
-static uint64_t alloc_fail;
+static uint32_t outbound_used;
+static uint32_t alloc_fail;
 
 void mempool_output_stats(void)
 {
-    printf("netbuf pool stats:\n");
-    printf("    pool-128 : %ld %ld %ld\n",  netbuf_pool_128.alloc_num,
-                         netbuf_pool_128.free_num, netbuf_pool_128.diff_max);
-    printf("    pool-320 : %ld %ld %ld\n",  netbuf_pool_320.alloc_num,
-                         netbuf_pool_320.free_num, netbuf_pool_320.diff_max);
-    printf("    pool-640 : %ld %ld %ld\n",  netbuf_pool_640.alloc_num,
-                         netbuf_pool_640.free_num, netbuf_pool_640.diff_max);
-    printf("    pool-6K  : %ld %ld %ld\n",  netbuf_pool_6K.alloc_num,
-                         netbuf_pool_6K.free_num, netbuf_pool_6K.diff_max);
-    printf("    pool-MAX : %ld %ld %ld\n",  netbuf_pool_max.alloc_num,
-                         netbuf_pool_max.free_num, netbuf_pool_max.diff_max);
-    printf("    outbound : %ld %ld\n",  outbound_alloc, outbound_free);
-    printf("    failure  : %ld\n",      alloc_fail);
+    printf("netbuf pool stats:  used      max\n");
+    printf("        pool-128 : %5d   %6d\n",  netbuf_pool_128.used_num,
+                                        netbuf_pool_128.used_max);
+    printf("        pool-320 : %5d   %6d\n",  netbuf_pool_320.used_num,
+                                        netbuf_pool_320.used_max);
+    printf("        pool-640 : %5d   %6d\n",  netbuf_pool_640.used_num,
+                                        netbuf_pool_640.used_max);
+    printf("        pool-6K  : %5d   %6d\n",  netbuf_pool_6K.used_num,
+                                        netbuf_pool_6K.used_max);
+    printf("        pool-MAX : %5d   %6d\n",  netbuf_pool_max.used_num,
+                                        netbuf_pool_max.used_max);
+    printf("        outbound : %5d\n",   outbound_used);
+    printf("        failure  : %5d\n",   alloc_fail);
 }
 
-int mempool_init(void)
+int mempool_init(uint32_t memory_cap)
 {
     memset(&netbuf_pool_128, 0, sizeof(netbuf_pool_t));
     memset(&netbuf_pool_320, 0, sizeof(netbuf_pool_t));
@@ -95,6 +94,11 @@ int mempool_init(void)
                                             != MEM_POOL_ERR_OK) {
         goto init_err;
     }
+    netbuf_pool_128.max = BUF128_NUM * memory_cap - 1;
+    netbuf_pool_320.max = BUF320_NUM * memory_cap - 1;
+    netbuf_pool_640.max = BUF640_NUM * memory_cap - 1;
+    netbuf_pool_6K.max = BUF6K_NUM * memory_cap - 1;
+    netbuf_pool_max.max = BUFMAX_NUM * memory_cap - 1;
     return 0;
 
 init_err: 
@@ -130,7 +134,7 @@ void *mempool_alloc(int *size)
         p = &netbuf_pool_max;
         buflen = BUFMAX_SIZE;
     } else {
-        __sync_add_and_fetch(&outbound_alloc, 1);
+        __sync_add_and_fetch(&outbound_used, 1);
         m = (netbuf_header_t*)malloc(n);
         if (m) {
             m->netpool = NULL;
@@ -143,11 +147,20 @@ void *mempool_alloc(int *size)
         }
     }
 
-    uint64_t diff;
+    uint64_t current, max;
+    current = p->used_num;
+    if (current > p->max) {
+        __sync_add_and_fetch(&alloc_fail, 1);
+        return NULL;
+    }
     if (pool_fixed_alloc(p->pool, (void**)(&m)) == MEM_POOL_ERR_OK) {
-        diff = __sync_add_and_fetch(&p->alloc_num, 1);
-        diff = diff - p->free_num;
-        p->diff_max = diff > p->diff_max ? diff : p->diff_max;
+        current = __sync_add_and_fetch(&p->used_num, 1);
+        max = p->used_max;
+        __sync_synchronize();
+        if (max < current) {
+            __sync_val_compare_and_swap(&p->used_max, max, current);
+        }
+        __sync_synchronize();
         m->netpool = p;
         m->pad = 0;
         m->magic = NETBUF_MAGIC;
@@ -167,10 +180,10 @@ void mempool_free(void *mem)
     
     m->magic = 0;
     if (m->netpool) {
-        __sync_add_and_fetch(&m->netpool->free_num, 1);
+        __sync_sub_and_fetch(&m->netpool->used_num, 1);
         pool_fixed_free(m->netpool->pool, (void*)m);
     } else {
-        __sync_add_and_fetch(&outbound_free, 1);
+        __sync_sub_and_fetch(&outbound_used, 1);
         free(m);
     }
 }

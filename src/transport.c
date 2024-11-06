@@ -567,6 +567,11 @@ transport_client_data(message_data_t *msg, msg_ev_ctx_t *ctx)
             nb = netbuf_join(b, nb);
             transport_client_send_to_crypto(MSG_ENCRYPT_REQ, nb, s);
             return;
+        } else {
+            log_error("out of memory");
+            netbuf_free(msg->nb);
+            stream_free(s);
+            return;
         }
     }
 
@@ -987,6 +992,7 @@ int server_relay_data(stream_t *s, netbuf_t **nbp)
         b = netbuf_alloc(sizeof(transport_data_t));
         if (!b) {
             log_error("out of memory");
+            stream_free(s);
             return 0;
         }
         transport_data_t *h = (transport_data_t*)NETBUF_START(b);
@@ -1009,6 +1015,7 @@ int server_relay_data(stream_t *s, netbuf_t **nbp)
         b = netbuf_alloc(STREAM_BUF_LEN);
         if (!b) {
             log_error("out of memory");
+            stream_free(s);
             return 0;
         }
         b->len = len;
@@ -1023,6 +1030,8 @@ int server_relay_data(stream_t *s, netbuf_t **nbp)
 
     nb = netbuf_alloc(length - sizeof(transport_data_t));
     if (!nb) {
+        stream_free(s);
+        log_error("out of memory");
         return 0;
     }
     memcpy(NETBUF_START(nb), (char*)(data->buf),
@@ -1166,7 +1175,11 @@ static void server_decrypt_rsp(message_crypto_rsp_t *rsp, msg_ev_ctx_t *ctx)
     if (ts->stream_info.ss_info.leftover) {
         ts->stream_info.ss_info.leftover =
             netbuf_join(ts->stream_info.ss_info.leftover, rsp->nb);
-        assert(ts->stream_info.ss_info.leftover);
+        if (!ts->stream_info.ss_info.leftover) {
+            log_error("out of memory(%s)", __func__);
+            stream_free(s);
+            return;
+        }
     } else {
         ts->stream_info.ss_info.leftover = rsp->nb;
     }
@@ -1285,6 +1298,7 @@ static void server_data(message_data_t *m, msg_ev_ctx_t *ctx)
                 netbuf_t *b = netbuf_alloc(nb->len - send_len);
                 if (!b) {
                     netbuf_free(nb);
+                    stream_free(s);
                     return;
                 }
                 memcpy(NETBUF_START(b),

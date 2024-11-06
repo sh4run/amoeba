@@ -338,7 +338,7 @@ int main(int argc, char **argv)
         goto error_exit;
     }
 
-    if (mempool_init() == -1) {
+    if (mempool_init(sys_cfg->memory_cap) == -1) {
         printf("Not enough memory.\n");
         return -1;
     }
