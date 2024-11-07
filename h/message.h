@@ -49,7 +49,8 @@ typedef enum {
     MSG_CLOSE_REQ,
     MSG_CLOSE_RSP,
     MSG_CRYPTO_ERROR,
-    MSG_CRYPTO_UPDATE
+    MSG_CRYPTO_UPDATE,
+    MSG_CRYPTO_REPLAY
 } message_transport_t;
 
 typedef struct {

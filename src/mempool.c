@@ -17,7 +17,7 @@
 #define BUF320_NUM   256
 #define BUF640_NUM   32
 #define BUF6K_NUM    512
-#define BUFMAX_NUM   32
+#define BUFMAX_NUM   16
 
 #define BUF128_SIZE  128
 #define BUF320_SIZE  320

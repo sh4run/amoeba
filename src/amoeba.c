@@ -908,7 +908,7 @@ amoeba_decrypt_head(crypto_stream_t *cs,
     h = (amoeba_head_t*)buffer;
     if (h->username_len > sizeof(username)) {
         log_error("wrong username length %d", h->username_len);
-        return -1;
+        return -2;
     }
     memcpy(username, h->username, h->username_len);
     username[h->username_len] = 0;
@@ -918,7 +918,7 @@ amoeba_decrypt_head(crypto_stream_t *cs,
                                           username);
     if (!user) {
         log_error("unable to find user %s", username);
-        return -1;
+        return -2;
     }
 
     /* validate hash */
@@ -934,7 +934,7 @@ amoeba_decrypt_head(crypto_stream_t *cs,
     if (memcmp(hash, hash_origin, AMOEBA_HEAD_HASH_LEN)) {
         /* hash doesn't match */
         log_error("wrong password for user %s", username);
-        return -1;
+        return -2;
     }
 
     h->device_id = ntohll(h->device_id);
@@ -968,11 +968,11 @@ amoeba_decrypt_head(crypto_stream_t *cs,
      */
     if ((client->last_epoch - EPOCH_MARGIN) >= h->epoch) {
         /* these are earlier than a reasonable margin */
-        log_info("Obsolete timestamp from %s: last=%lx rcv=%lx diff=%ld",
+        log_info("Obsolete timestamp from %s: last=%lx rcv=%lx diff=%lx",
                   username,
                   client->last_epoch, h->epoch,
                   client->last_epoch - h->epoch);
-        return -1;
+        return -2;
     }
 
     /* calculate local epoch */
@@ -993,7 +993,7 @@ amoeba_decrypt_head(crypto_stream_t *cs,
         if (h->epoch <= client->last_epoch) {
             log_info("Obsolete timestamp after idle: %lx",
                      h->epoch);
-            return -1;
+            return -2;
         }
     }
 
@@ -1155,6 +1155,10 @@ amoeba_server_decrypt_req(message_crypto_req_t *req, msg_ev_ctx_t *ctx)
 
     int len;
     while ((len = server_decrypt_input(cs, cs->leftover, extra))) {
+        if (len == -2) {
+            crypto_notify(cs, MSG_CRYPTO_REPLAY);
+            break;
+        }
         if (len == -1 || len > cs->leftover->len) {
             /* error in decryption */
             crypto_notify(cs, MSG_CRYPTO_ERROR);

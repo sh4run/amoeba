@@ -1,5 +1,6 @@
 {
     "mode": "server",
+    "memory-cap": 16,
     "server": {
         "address": {
             "ip": "::0",

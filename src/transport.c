@@ -41,6 +41,7 @@ typedef struct {
 #define TUNNEL_MODE         0x00000002
 #define TRANS_SERVER        0x00000004
 #define TRANS_PASSTHROUGH   0x00000008
+#define TRANS_DROP          0x00000010
 
 typedef struct {
     remote_t        *remote;
@@ -92,7 +93,7 @@ typedef struct __attribute__((__packed__)) {
     uint8_t   buf[0];
 } transport_data_t;
 
-static uint32_t alloc_num, free_num, crypto_err;
+static uint32_t alloc_num, free_num, crypto_err, replay;
 static uint32_t enqueue_num, dequeue_num;
 static uint32_t passthrough;
 
@@ -111,8 +112,8 @@ static proto_ctrl_t client_stream_ctrl = {
 
 static void transport_stream_stats(void)
 {
-    printf("transport: alloc %d, free %d, crypto error %d\n",
-            alloc_num, free_num, crypto_err);
+    printf("transport: alloc %d, free %d, crypto error %d replay %d\n",
+            alloc_num, free_num, crypto_err, replay);
     printf("           enqueue %d, dequeue %d\n", enqueue_num, dequeue_num);
     printf("           passthrough %d\n", passthrough);
 }
@@ -186,26 +187,39 @@ static int transport_send_data(uint64_t ds_id,
     return -1;
 }
 
+static inline stream_t*
+crypto_validate_notify(message_crypto_notify_t *m)
+{
+    transport_stream_t *ts;
+    stream_t *s = (stream_t*)m->transport_id;
+
+    if (!VALID_STREAM(s)) {
+        goto stream_deleted;
+    }
+    ts = (transport_stream_t*)STREAM_PROTO_DATA(s);
+    if (ts->magic != TS_MAGIC) {
+        goto stream_deleted;
+    }
+    return s;
+
+stream_deleted:
+    transport_close_crypto(m->crypto_id,
+                           m->transport_id,
+                           MSG_SRC(&m->h));
+    return NULL;
+}
+
 static void
 crypto_error(message_crypto_notify_t *m)
 {
     stream_t *s;
     transport_stream_t *ts;
 
-    s = (stream_t*)m->transport_id;
-    if (!VALID_STREAM(s)) {
-        transport_close_crypto(m->crypto_id,
-                               m->transport_id,
-                               MSG_SRC(&m->h));
+    s = crypto_validate_notify(m);
+    if (!s) {
         return;
     }
     ts = (transport_stream_t*)STREAM_PROTO_DATA(s);
-    if (ts->magic != TS_MAGIC) {
-        transport_close_crypto(m->crypto_id,
-                               m->transport_id,
-                               MSG_SRC(&m->h));
-        return;
-    }
     if (!ts->crypto_id) {
         /* If this is the first packet, crypto-id is not set yet */
         ts->crypto_id = m->crypto_id;
@@ -221,14 +235,11 @@ crypto_update(message_crypto_notify_t *m)
     stream_t *s;
     transport_stream_t *ts;
 
-    s = (stream_t*)m->transport_id;
-    if (!VALID_STREAM(s)) {
-        goto stream_deleted;
+    s = crypto_validate_notify(m);
+    if (!s) {
+        return;
     }
     ts = (transport_stream_t*)STREAM_PROTO_DATA(s);
-    if (ts->magic != TS_MAGIC) {
-        goto stream_deleted;
-    }
     if (!ts->crypto_id) {
         /* If this is the first packet, crypto-id is not set yet */
         ts->crypto_id = m->crypto_id;
@@ -260,13 +271,22 @@ crypto_update(message_crypto_notify_t *m)
             }
         }
     }
+}
 
-    return;
-
-stream_deleted:
-    transport_close_crypto(m->crypto_id,
-                           m->transport_id,
-                           MSG_SRC(&m->h));
+static void
+crypto_replay(message_crypto_notify_t *m)
+{
+    stream_t *s;
+    transport_stream_t *ts;
+    s = crypto_validate_notify(m);
+    if (!s) {
+        return;
+    }
+    ts = (transport_stream_t*)STREAM_PROTO_DATA(s);
+    /* mark to drop following incoming */
+    ts->flags |= TRANS_DROP;
+    replay++;
+    log_info("replay received.");
 }
 
 static void *transport_stream_new(stream_t *s)
@@ -1111,6 +1131,12 @@ static int server_stream_input(stream_t *s, netbuf_t **nb)
         *nb = NULL;
         return 0;
     }
+    if (ts->flags & TRANS_DROP) {
+        netbuf_free(*nb);
+        *nb = NULL;
+        return 0;
+    }
+
     transport_server_send_to_crypto(MSG_DECRYPT_REQ, *nb, s);
     *nb = NULL;
     return 0;
@@ -1400,6 +1426,9 @@ server_msg_handler(message_queue_t *que, message_header_t *header, void *arg)
         case MSG_HEARTBEAT_REQ :
             notfree = 1;
             send_heartbeat_rsp((message_heartbeat_t*)header, ctx->name);
+            break;
+        case MSG_CRYPTO_REPLAY:
+            crypto_replay((message_crypto_notify_t*)header);
             break;
         case MSG_SYS_INIT:
             transport_server_init(ctx);
