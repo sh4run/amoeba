@@ -29,7 +29,8 @@ typedef enum {
     MSG_HEARTBEAT_RSP,
     MSG_SYS_INIT,
     MSG_SYS_INIT_COMPLETE,
-    MSG_SYS_START
+    MSG_SYS_START,
+    MSG_BACKPRESSURE
 } message_type_main_t;
 
 typedef enum {
@@ -59,6 +60,18 @@ typedef struct {
     uint64_t            transport_id;
     uint8_t             rx_ex_bytes;
 } message_crypto_notify_t;
+
+typedef enum {
+    backpressure_on = 1,
+    backpressure_off
+} backpressure_state_t;
+
+typedef struct {
+    message_header_t        h;
+    uint64_t                downstream_id;
+    uint64_t                upstream_id;
+    backpressure_state_t    state;
+} message_backpressure_t;
 
 typedef struct {
     message_header_t    h;
@@ -180,6 +193,24 @@ send_init_rsp(message_header_t *h, task_id_t name)
     MSG_TYPE(h) = MSG_SYS_INIT_COMPLETE;
     MSG_SRC(h) = name;
     message_send(h, target);
+}
+
+static inline void
+send_backpressure(task_id_t src,
+                  task_id_t dst,
+                  uint64_t  downstream_id,
+                  uint64_t  upstream_id,
+                  backpressure_state_t state)
+{
+    message_backpressure_t *m;
+    m = (message_backpressure_t*)message_new_encap(src, MSG_BACKPRESSURE,
+                                        sizeof(message_backpressure_t));
+    if (m) {
+        m->downstream_id = downstream_id;
+        m->upstream_id = upstream_id;
+        m->state = state;
+        message_send(&m->h, dst);
+    }
 }
 
 #endif

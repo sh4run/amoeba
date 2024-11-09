@@ -265,6 +265,19 @@ upstream_data(message_data_t *msg, msg_ev_ctx_t *ctx)
 }
 
 static void
+upstream_recv_bp(message_backpressure_t* msg)
+{
+    stream_t *s = (stream_t *)msg->upstream_id;
+    if (VALID_STREAM(s)) {
+        upstream_t *u = (upstream_t*)STREAM_PROTO_DATA(s);
+        if ((u->magic == UP_MAGIC) &&
+            (u->downstream_id == msg->downstream_id)) {
+            stream_rcv_ctrl(s, (msg->state == backpressure_on));
+        }
+    }
+}
+
+static void
 msg_handler(message_queue_t *que, message_header_t *header, void *arg)
 {
     UNUSED(que);
@@ -281,6 +294,9 @@ msg_handler(message_queue_t *que, message_header_t *header, void *arg)
             break;
         case MSG_DISCONNECT:
             upstream_disconnect((message_disconnect_t*)header, ctx);
+            break;
+        case MSG_BACKPRESSURE:
+            upstream_recv_bp((message_backpressure_t*)header);
             break;
         case MSG_HEARTBEAT_REQ :
             notfree = 1;
@@ -375,11 +391,19 @@ static int upstream_free(stream_t *s, void *m)
     return 0;
 }
 
+static void upstream_bkpressure(stream_t *s, backpressure_state_t state)
+{
+    upstream_t *u = (upstream_t*)STREAM_PROTO_DATA(s);
+    send_backpressure(task_upstream, u->downstream_task,
+                      u->downstream_id, (uint64_t)s, state);
+}
+
 static proto_ctrl_t upstream_ctrl = {
     task_upstream,
     upstream_new,
     upstream_free,
-    upstream_input
+    upstream_input,
+    upstream_bkpressure
 };
 
 static void upstream_stats(void)

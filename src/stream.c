@@ -18,18 +18,23 @@
 #include "mempool.h"
 
 #define  DATA_OFFSET    256
+
+#define BKP_ON_THRESHOLD   40
+#define BKP_OFF_THRESHOLD  5
+
 static int stream_timeout_interval;
 
 static int total_streams;
 static int idle_cleaned;
 static uint32_t enqueue_num, dequeue_num;
-//static uint32_t obsolete_free, send_num;
+static uint32_t bp_on, bp_off;
 
 static void stream_stats(void)
 {
     printf("Total streams %d, idle cleaned %d\n",
             total_streams, idle_cleaned);
     printf("enqueue %d, dequeue %d\n", enqueue_num, dequeue_num);
+    printf("backpressure on %d off %d\n", bp_on, bp_off);
 }
 
 #define SKIP_SHIFT_THRESHOLD   (STREAM_BUF_LEN >> 1)
@@ -37,10 +42,7 @@ static void
 stream_read_cb(struct ev_loop *loop, ev_io *w, int revents)
 {
     UNUSED(revents);
-    msg_ev_ctx_t *ctx = (msg_ev_ctx_t*)ev_userdata(loop);
-    proto_common_extra_t *proto;
 
-    proto = (proto_common_extra_t*)msg_ev_ctx_get_extradata(ctx);
     stream_t *s = STREAM_FROM_READIO(w);
 
     s->io_num++;
@@ -66,7 +68,7 @@ stream_read_cb(struct ev_loop *loop, ev_io *w, int revents)
             int processed_bytes;
             s->input->len += len;
             while((processed_bytes =
-                        proto->proto_cb->input_cb(s, &s->input))) {
+                        s->proto_cb->input_cb(s, &s->input))) {
                 if (!s->input) {
                     /* netbuf is taken by cb. nothing to do */
                     return;
@@ -91,8 +93,8 @@ stream_read_cb(struct ev_loop *loop, ev_io *w, int revents)
     } else {
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
             log_info("socket read error(%d)", errno);
-            ev_io_stop(s->loop, &s->write_io);
-            ev_io_stop(s->loop, &s->read_io);
+            ev_io_stop(loop, &s->write_io);
+            ev_io_stop(loop, &s->read_io);
             stream_free(s);
         }
     }
@@ -128,8 +130,15 @@ stream_write_cb(struct ev_loop *loop, ev_io *w, int revents)
                 } else {
                     /* all sent. */
                     dequeue(&s->output_q);
+                    s->output_q_len--;
                     netbuf_free(nb);
                     __sync_add_and_fetch(&dequeue_num, 1);
+                    if (s->bp_state == backpressure_on &&
+                        s->output_q_len < BKP_OFF_THRESHOLD) {
+                        s->bp_state = backpressure_off;
+                        s->proto_cb->bkp_cb(s, s->bp_state);
+                        __sync_add_and_fetch(&bp_off, 1);
+                    }
                 }
                 sent_bytes += (int)size;
             } else {
@@ -147,16 +156,15 @@ stream_write_cb(struct ev_loop *loop, ev_io *w, int revents)
 
 void stream_send(stream_t *s, netbuf_t *nb)
 {
-    //__sync_add_and_fetch(&send_num, 1);
     if (s->obsolete) {
         /* no more transmit if it is pending for removal */
-        //__sync_add_and_fetch(&obsolete_free, 1);
         netbuf_free(nb);
         return;
     }
 
     if (is_empty(&s->output_q)) {
         enqueue(&s->output_q, &nb->elem);
+        s->output_q_len++;
         __sync_add_and_fetch(&enqueue_num, 1);
         if (s->fd != -1) {
             /* socket already attached */
@@ -180,7 +188,14 @@ void stream_send(stream_t *s, netbuf_t *nb)
         tail->len += nb->len;
         netbuf_free(nb);
     } else {
+        if (s->bp_state == backpressure_off &&
+            s->output_q_len > BKP_ON_THRESHOLD) {
+            s->bp_state = backpressure_on;
+            s->proto_cb->bkp_cb(s, s->bp_state);
+            __sync_add_and_fetch(&bp_on, 1);
+        }
         enqueue(&s->output_q, &nb->elem);
+        s->output_q_len++;
         __sync_add_and_fetch(&enqueue_num, 1);
     }
 }
@@ -249,11 +264,7 @@ int stream_free(stream_t *s)
     }
 
     if (s->proto_data) {
-        msg_ev_ctx_t *ctx;
-        proto_common_extra_t *proto;
-        ctx = (msg_ev_ctx_t*)ev_userdata(s->loop);
-        proto = (proto_common_extra_t*)msg_ev_ctx_get_extradata(ctx);
-        if (proto->proto_cb->free_cb(s, s->proto_data) != 0) {
+        if (s->proto_cb->free_cb(s, s->proto_data) != 0) {
             /* something is ongoing */
             return -1;
         }
@@ -271,6 +282,7 @@ int stream_free(stream_t *s)
 
     netbuf_t *nb;
     while ((nb = (netbuf_t*)dequeue(&s->output_q))) {
+        s->output_q_len--;
         netbuf_free(nb);
         __sync_add_and_fetch(&dequeue_num, 1);
     }
@@ -280,6 +292,19 @@ int stream_free(stream_t *s)
     s->fd = -1;
     stream_delete(s);
     return 0;
+}
+
+void stream_rcv_ctrl(stream_t *s, int stop)
+{
+    if (stop) {
+        if (s->fd != -1) {
+            ev_io_stop(s->loop, &s->read_io);
+        }
+    } else {
+        if (s->fd != -1) {
+            ev_io_start(s->loop, &s->read_io);
+        }
+    }
 }
 
 stream_t *stream_new(struct ev_loop *loop)
@@ -301,9 +326,12 @@ stream_t *stream_new(struct ev_loop *loop)
     s->obsolete = 0;
     s->node.prev = s->node.next = NULL;
     s->io_num = 0;
+    s->bp_state = backpressure_off;
     init_queue(&s->output_q);
+    s->output_q_len = 0;
+    s->proto_cb = proto->proto_cb;
 
-    s->proto_data = proto->proto_cb->new_cb(s);
+    s->proto_data = s->proto_cb->new_cb(s);
     if (!s->proto_data) {
         mempool_free(s);
         return NULL;
@@ -333,7 +361,7 @@ INIT_ROUTINE(static void stream_init_env(void))
     register_stats_cb(stream_stats);
 
     if (!stream_timeout_interval) {
-        stream_timeout_interval = (time(NULL) % 7) + 4;
+        stream_timeout_interval = (time(NULL) % 7) + 3;
     }
     sigset_t mask;
     sigemptyset(&mask);

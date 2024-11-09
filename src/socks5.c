@@ -168,6 +168,19 @@ static void socks5_data(message_data_t *m,
     }
 }
 
+static void socks5_recv_backpressure(message_backpressure_t* m)
+{
+    stream_t *s = (stream_t *)m->downstream_id;
+    if (!VALID_STREAM(s)) {
+        return;
+    }
+    socks5_stream_t *ss = (socks5_stream_t*)STREAM_PROTO_DATA(s);
+    if ((ss->magic == SS_MAGIC) &&
+        (ss->upstream_id == m->upstream_id)) {
+        stream_rcv_ctrl(s, (m->state == backpressure_on));
+    }
+}
+
 static void
 socks5_msg_handler(message_queue_t *que, message_header_t *header, void *arg)
 {
@@ -185,6 +198,9 @@ socks5_msg_handler(message_queue_t *que, message_header_t *header, void *arg)
             break;
         case MSG_DISCONNECT:
             socks5_disconnect((message_disconnect_t*)header, ctx);
+            break;
+        case MSG_BACKPRESSURE:
+            socks5_recv_backpressure((message_backpressure_t*)header);
             break;
         case MSG_HEARTBEAT_REQ :
             notfree = 1;
@@ -440,11 +456,19 @@ static int socks5_free(stream_t *s, void *m)
     return 0;
 }
 
+static void socks5_bkpressure(stream_t *s, backpressure_state_t state)
+{
+    socks5_stream_t *ss = (socks5_stream_t *)STREAM_PROTO_DATA(s);
+    send_backpressure(task_socks5, ss->target, (uint64_t)s,
+                      ss->upstream_id, state);
+}
+
 static proto_ctrl_t socks5_ctrl = {
     task_socks5,
     socks5_new,
     socks5_free,
-    socks5_input
+    socks5_input,
+    socks5_bkpressure
 };
 
 static void socks5_stats(void)

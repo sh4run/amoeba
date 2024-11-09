@@ -100,6 +100,7 @@ static uint32_t passthrough;
 static void *transport_stream_new(stream_t *s);
 static int client_stream_free(stream_t *s, void *m);
 static int client_stream_input(stream_t *s, netbuf_t **nb);
+static void transport_bkpressure(stream_t *s, backpressure_state_t state);
 /*
  * transport client stream control block
  */
@@ -107,7 +108,8 @@ static proto_ctrl_t client_stream_ctrl = {
     task_transport,
     transport_stream_new,
     client_stream_free,
-    client_stream_input
+    client_stream_input,
+    transport_bkpressure
 };
 
 static void transport_stream_stats(void)
@@ -287,6 +289,44 @@ crypto_replay(message_crypto_notify_t *m)
     ts->flags |= TRANS_DROP;
     replay++;
     log_info("replay received.");
+}
+
+static void transport_bkpressure(stream_t *s, backpressure_state_t state)
+{
+    transport_stream_t *ts;
+    ts = (transport_stream_t*)STREAM_PROTO_DATA(s);
+
+    if (ts->flags & CRYPTO_CLOSED) {
+        return;
+    }
+    if (ts->flags & TRANS_SERVER) {
+        if (ts->upstream_id) {
+            send_backpressure(task_transport, ts->peer_task,
+                              (uint64_t)s, ts->upstream_id, state);
+        }
+    } else {
+        if (ts->downstream_id) {
+            send_backpressure(task_transport, ts->peer_task,
+                              ts->downstream_id, ts->upstream_id, state);
+        }
+    }
+}
+
+static void transport_recv_backpressure(message_backpressure_t* m)
+{
+    transport_stream_t *ts;
+
+    stream_t *s = (stream_t*)m->upstream_id;
+    if (!VALID_STREAM(s)) {
+        return;
+    }
+    ts = STREAM_PROTO_DATA(s);
+    if(ts->magic != TS_MAGIC) {
+        return;
+    }
+    if (ts->downstream_id == m->downstream_id) {
+        stream_rcv_ctrl(s, (m->state == backpressure_on));
+    }
 }
 
 static void *transport_stream_new(stream_t *s)
@@ -737,6 +777,9 @@ client_msg_handler(message_queue_t *que, message_header_t *header, void *arg)
         case MSG_CRYPTO_UPDATE:
             crypto_update((message_crypto_notify_t*)header);
             break;
+        case MSG_BACKPRESSURE:
+            transport_recv_backpressure((message_backpressure_t*)header);
+            break;
         case MSG_HEARTBEAT_REQ:
             notfree = 1;
             send_heartbeat_rsp((message_heartbeat_t*)header, ctx->name);
@@ -917,7 +960,8 @@ static proto_ctrl_t server_stream_ctrl = {
     task_transport,
     server_stream_new,
     server_stream_free,
-    server_stream_input
+    server_stream_input,
+    transport_bkpressure
 };
 
 static void *server_stream_new(stream_t *s)
@@ -1289,6 +1333,23 @@ static void server_connect_rsp(message_connect_rsp_t *rsp,
     }
 }
 
+static void server_recv_backpressure(message_backpressure_t* m)
+{
+    transport_stream_t *ts;
+
+    stream_t *s = (stream_t*)m->downstream_id;
+    if (!VALID_STREAM(s)) {
+        return;
+    }
+    ts = STREAM_PROTO_DATA(s);
+    if(ts->magic != TS_MAGIC) {
+        return;
+    }
+    if (ts->upstream_id == m->upstream_id) {
+        stream_rcv_ctrl(s, (m->state == backpressure_on));
+    }
+}
+
 /* Data from upstream */
 static void server_data(message_data_t *m, msg_ev_ctx_t *ctx)
 {
@@ -1422,6 +1483,9 @@ server_msg_handler(message_queue_t *que, message_header_t *header, void *arg)
             break;
         case MSG_DISCONNECT:
             server_disconnect((message_disconnect_t*)header,ctx);
+            break;
+        case MSG_BACKPRESSURE:
+            server_recv_backpressure((message_backpressure_t*)header);
             break;
         case MSG_HEARTBEAT_REQ :
             notfree = 1;
