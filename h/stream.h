@@ -21,12 +21,14 @@ typedef struct _stream_t stream_t;
 typedef int (*proto_input_cb_t)(stream_t *s, netbuf_t **nb);
 typedef void *(*proto_data_new_cb_t)(stream_t *s);
 typedef int (*proto_data_free_cb_t)(stream_t *s, void *);
+typedef void (*proto_bkp_cb_t)(stream_t *s, backpressure_state_t state);
 
 typedef struct {
     int                      name;
     proto_data_new_cb_t      new_cb;
     proto_data_free_cb_t     free_cb;
     proto_input_cb_t         input_cb;
+    proto_bkp_cb_t           bkp_cb;
 } proto_ctrl_t;
 
 #define STREAM_MAGIC    0xAA5577DD
@@ -35,6 +37,7 @@ typedef struct {
 typedef struct _stream_t {
     struct list_head    node;
     uint32_t            magic;
+    proto_ctrl_t        *proto_cb;
     int                 fd;
     struct ev_loop     *loop;
     ev_io               read_io;
@@ -43,8 +46,10 @@ typedef struct _stream_t {
     uint32_t            io_num;
     netbuf_t           *input;
     queue_t             output_q;
+    int                 output_q_len;
     void               *proto_data;
     int                 obsolete;
+    backpressure_state_t    bp_state;
 } stream_t;
 
 #define VALID_STREAM(s)   ((s)->magic == STREAM_MAGIC && ((s)->proto_data))
@@ -66,5 +71,6 @@ void stream_send (stream_t *s, netbuf_t *nb);
 int stream_free (stream_t *s);
 stream_t *stream_new (struct ev_loop *loop);
 void stream_attach (stream_t *s, int fd);
+void stream_rcv_ctrl(stream_t *s, int stop);
 
 #endif

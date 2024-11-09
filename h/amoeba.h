@@ -17,9 +17,10 @@
 #include "json_config.h"
 #include "utils.h"
 #include "message_queue.h"
-#include "stream.h"
 #include "server.h"
+#include "netbuf.h"
 #include "message.h"
+#include "stream.h"
 
 typedef struct {
     struct ev_loop        *loop;
