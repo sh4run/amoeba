@@ -557,6 +557,8 @@ transport_client_connect(message_connect_t *msg, msg_ev_ctx_t *ctx)
 
     if (is_https(&msg->type_addr)) {
         ts->reply_enc = 3500 + (((uint64_t)s >> 4) & 0xff);
+    } else {
+        ts->reply_enc = 0;
     }
 
     stream_attach(s, fd);

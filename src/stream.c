@@ -19,8 +19,8 @@
 
 #define  DATA_OFFSET    256
 
-#define BKP_ON_THRESHOLD   40
-#define BKP_OFF_THRESHOLD  5
+#define BKP_ON_THRESHOLD   60
+#define BKP_OFF_THRESHOLD  8
 
 static int stream_timeout_interval;
 
@@ -38,11 +38,9 @@ static void stream_stats(void)
 }
 
 #define SKIP_SHIFT_THRESHOLD   (STREAM_BUF_LEN >> 1)
-static void
-stream_read_cb(struct ev_loop *loop, ev_io *w, int revents)
+static int
+stream_read_cb_internal(struct ev_loop *loop, ev_io *w)
 {
-    UNUSED(revents);
-
     stream_t *s = STREAM_FROM_READIO(w);
 
     s->io_num++;
@@ -53,7 +51,7 @@ stream_read_cb(struct ev_loop *loop, ev_io *w, int revents)
         if (!netbuf) {
             /* low memory. close and exit*/
             stream_free(s);
-            return;
+            return 0;
         }
         netbuf->offset = DATA_OFFSET;
         s->input = netbuf;
@@ -71,24 +69,25 @@ stream_read_cb(struct ev_loop *loop, ev_io *w, int revents)
                         s->proto_cb->input_cb(s, &s->input))) {
                 if (!s->input) {
                     /* netbuf is taken by cb. nothing to do */
-                    return;
+                    return 1;
                 }
                 s->input->offset += processed_bytes;
                 s->input->len -= processed_bytes;
                 if (!s->input->len) {
                     s->input->offset = DATA_OFFSET;
-                    return;
+                    return 1;
                 }
             }
             if (!s->input) {
                 /* netbuf is taken by cb. nothing to do */
-                return;
+                return 1;
             }
             if (s->input->buf_len - s->input->len - s->input->offset <
                                                    SKIP_SHIFT_THRESHOLD) {
                 memcpy(s->input->buf, s->input->buf + s->input->offset,
                        s->input->len);
             }
+            return 1;
         }
     } else {
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
@@ -96,6 +95,21 @@ stream_read_cb(struct ev_loop *loop, ev_io *w, int revents)
             ev_io_stop(loop, &s->write_io);
             ev_io_stop(loop, &s->read_io);
             stream_free(s);
+        }
+    }
+    return 0;
+}
+
+static void
+stream_read_cb(struct ev_loop *loop, ev_io *w, int revents)
+{
+    UNUSED(revents);
+    int i;
+
+    while(stream_read_cb_internal(loop, w)) {
+        if (++i > 20) {
+            i = 0;
+            sched_yield();
         }
     }
 }
@@ -238,7 +252,7 @@ stream_delete(stream_t *s)
 {
     /* wait a short time before acutal delete */
     s->magic = STREAM_PENDING_DEL;
-    ev_timer_init(&s->idle_timer, stream_del_timeout_cb, 1, 0);
+    ev_timer_init(&s->idle_timer, stream_del_timeout_cb, 2, 0);
     ev_timer_start(s->loop, &s->idle_timer);    
 }
 
@@ -361,7 +375,7 @@ INIT_ROUTINE(static void stream_init_env(void))
     register_stats_cb(stream_stats);
 
     if (!stream_timeout_interval) {
-        stream_timeout_interval = (time(NULL) % 7) + 3;
+        stream_timeout_interval = (time(NULL) % 80) + 120;
     }
     sigset_t mask;
     sigemptyset(&mask);

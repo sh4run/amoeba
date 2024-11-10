@@ -447,7 +447,7 @@ static jcfg_system_t *parse_config(const char *input)
         if (cfg->mode == server_mode) {
             cfg->memory_cap = 8;
         } else {
-            cfg->memory_cap = 4;
+            cfg->memory_cap = 6;
         }
     }
 

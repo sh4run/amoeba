@@ -10,6 +10,8 @@
 
 #include <stdint.h>
 
+#define MAX_BUFFER_FACTOR   6
+
 extern int mempool_init (uint32_t memory_cap);
 extern void *mempool_alloc (int *size);
 extern void mempool_free (void *mem);
