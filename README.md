@@ -9,16 +9,27 @@ Features include:
 4. Support of multiple users.
 
 ## Build
-You might need to install gcc, make, git, libev-dev, and libmbedtls-dev first.
+
+<details>
+  <summary>Click for details</summary>
+
+####
+You might need to install gcc, make, git, libev-dev, and libmbedtls-dev before the following steps.
+
+A dynamically-linked binary requires libev-dev and libmbedtls-dev to be installed on your target machine(vps). 
+
+To build a statically-linked binary:
 
     git clone --recurse-submodules https://github.com/sh4run/amoeba.git
     cd amoeba
     make
 
-To build a static-linked binary:
+A statically-linked binary doesn't have such a requirement. To build a statically-linked binary:
     
     make clean
     make DYNAMIC=off
+
+</details>
 
 ## Deploy
 Generate public/private key with:
