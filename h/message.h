@@ -155,11 +155,20 @@ typedef struct {
 #ifdef MESSAGE_DEBUG
 extern uint64_t message_new_num;
 extern uint64_t message_free_num;
+extern uint64_t message_diff_max;
 
 static inline
 message_header_t *message_new_encap(int src_id, int message_type, int length)
 {
-    __sync_add_and_fetch(&message_new_num, 1);
+    uint64_t alloc, diff;
+    alloc = __sync_add_and_fetch(&message_new_num, 1);
+    diff = alloc - message_free_num;
+    uint64_t old_max = message_diff_max;
+    __sync_synchronize();
+    if (old_max < diff) {
+        __sync_val_compare_and_swap(&message_diff_max, old_max, diff);
+    }
+    __sync_synchronize();
     return message_new(src_id, message_type, length);
 }
 

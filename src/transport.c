@@ -226,7 +226,7 @@ crypto_error(message_crypto_notify_t *m)
         /* If this is the first packet, crypto-id is not set yet */
         ts->crypto_id = m->crypto_id;
     }
-    stream_free(s);
+    ts->flags |= TRANS_DROP;
     crypto_err++;
     log_info("crypto error received.");
 }
@@ -307,7 +307,7 @@ static void transport_bkpressure(stream_t *s, backpressure_state_t state)
     } else {
         if (ts->downstream_id) {
             send_backpressure(task_transport, ts->peer_task,
-                              ts->downstream_id, ts->upstream_id, state);
+                              ts->downstream_id, (uint64_t)s, state);
         }
     }
 }
@@ -557,6 +557,8 @@ transport_client_connect(message_connect_t *msg, msg_ev_ctx_t *ctx)
 
     if (is_https(&msg->type_addr)) {
         ts->reply_enc = 3500 + (((uint64_t)s >> 4) & 0xff);
+    } else {
+        ts->reply_enc = 0;
     }
 
     stream_attach(s, fd);

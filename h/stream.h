@@ -14,7 +14,7 @@
 #define LIST_POISONING
 #include "list.h"
 
-#define STREAM_BUF_LEN   6000
+#define STREAM_BUF_LEN   (MAX_BUFFER_FACTOR * 1000)
 
 typedef struct _stream_t stream_t;
 
@@ -46,7 +46,7 @@ typedef struct _stream_t {
     uint32_t            io_num;
     netbuf_t           *input;
     queue_t             output_q;
-    int                 output_q_len;
+    uint32_t            output_q_len;
     void               *proto_data;
     int                 obsolete;
     backpressure_state_t    bp_state;

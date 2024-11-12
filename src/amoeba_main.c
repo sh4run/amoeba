@@ -61,6 +61,7 @@ typedef struct {
 #ifdef MESSAGE_DEBUG
 uint64_t message_new_num;
 uint64_t message_free_num;
+uint64_t message_diff_max;
 #endif
 
 static task_t server_tasks[task_id_end];
@@ -289,7 +290,9 @@ sigint_cb (struct ev_loop *loop, ev_signal *w, int revents)
     }
 
 #ifdef MESSAGE_DEBUG
-    printf("Message stats: %ld, %ld\n", message_new_num, message_free_num);
+    printf("Message stats: %ld, %ld, %ld\n", message_new_num,
+                                             message_free_num,
+                                             message_diff_max);
 #endif
 
     mempool_output_stats();

@@ -20,29 +20,36 @@
 #define  DATA_OFFSET    256
 
 #define BKP_ON_THRESHOLD   40
-#define BKP_OFF_THRESHOLD  5
+#define BKP_OFF_THRESHOLD  10
+
+//#define QUEUE_MAX_DEBUG
 
 static int stream_timeout_interval;
 
 static int total_streams;
 static int idle_cleaned;
 static uint32_t enqueue_num, dequeue_num;
-static uint32_t bp_on, bp_off;
+#ifdef QUEUE_MAX_DEBUG
+static uint32_t max;
+#endif
+static uint32_t bp_on, bp_on_rcv, bp_off, bp_off_rcv;
 
 static void stream_stats(void)
 {
     printf("Total streams %d, idle cleaned %d\n",
             total_streams, idle_cleaned);
-    printf("enqueue %d, dequeue %d\n", enqueue_num, dequeue_num);
-    printf("backpressure on %d off %d\n", bp_on, bp_off);
+    printf("enqueue %d, dequeue %d", enqueue_num, dequeue_num);
+#ifdef QUEUE_MAX_DEBUG
+    printf(" max %d", max);
+#endif
+    printf("\nbackpressure on %d/%d off %d/%d\n",
+            bp_on, bp_on_rcv, bp_off, bp_off_rcv);
 }
 
 #define SKIP_SHIFT_THRESHOLD   (STREAM_BUF_LEN >> 1)
-static void
-stream_read_cb(struct ev_loop *loop, ev_io *w, int revents)
+static inline int
+stream_read_cb_internal(struct ev_loop *loop, ev_io *w)
 {
-    UNUSED(revents);
-
     stream_t *s = STREAM_FROM_READIO(w);
 
     s->io_num++;
@@ -53,7 +60,7 @@ stream_read_cb(struct ev_loop *loop, ev_io *w, int revents)
         if (!netbuf) {
             /* low memory. close and exit*/
             stream_free(s);
-            return;
+            return 0;
         }
         netbuf->offset = DATA_OFFSET;
         s->input = netbuf;
@@ -71,24 +78,25 @@ stream_read_cb(struct ev_loop *loop, ev_io *w, int revents)
                         s->proto_cb->input_cb(s, &s->input))) {
                 if (!s->input) {
                     /* netbuf is taken by cb. nothing to do */
-                    return;
+                    return 1;
                 }
                 s->input->offset += processed_bytes;
                 s->input->len -= processed_bytes;
                 if (!s->input->len) {
                     s->input->offset = DATA_OFFSET;
-                    return;
+                    return 1;
                 }
             }
             if (!s->input) {
                 /* netbuf is taken by cb. nothing to do */
-                return;
+                return 1;
             }
             if (s->input->buf_len - s->input->len - s->input->offset <
                                                    SKIP_SHIFT_THRESHOLD) {
                 memcpy(s->input->buf, s->input->buf + s->input->offset,
                        s->input->len);
             }
+            return 1;
         }
     } else {
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
@@ -96,6 +104,21 @@ stream_read_cb(struct ev_loop *loop, ev_io *w, int revents)
             ev_io_stop(loop, &s->write_io);
             ev_io_stop(loop, &s->read_io);
             stream_free(s);
+        }
+    }
+    return 0;
+}
+
+static void
+stream_read_cb(struct ev_loop *loop, ev_io *w, int revents)
+{
+    UNUSED(revents);
+    int i = 0;
+
+    while(stream_read_cb_internal(loop, w)) {
+        if (++i > 30) {
+            sched_yield();
+            break;
         }
     }
 }
@@ -197,6 +220,14 @@ void stream_send(stream_t *s, netbuf_t *nb)
         enqueue(&s->output_q, &nb->elem);
         s->output_q_len++;
         __sync_add_and_fetch(&enqueue_num, 1);
+#ifdef QUEUE_MAX_DEBUG
+        uint32_t old_max = max;
+        __sync_synchronize();
+        if (old_max < s->output_q_len) {
+            __sync_val_compare_and_swap(&max, old_max, s->output_q_len);
+        }
+        __sync_synchronize();
+#endif
     }
 }
 
@@ -238,7 +269,7 @@ stream_delete(stream_t *s)
 {
     /* wait a short time before acutal delete */
     s->magic = STREAM_PENDING_DEL;
-    ev_timer_init(&s->idle_timer, stream_del_timeout_cb, 1, 0);
+    ev_timer_init(&s->idle_timer, stream_del_timeout_cb, 2, 0);
     ev_timer_start(s->loop, &s->idle_timer);    
 }
 
@@ -299,10 +330,12 @@ void stream_rcv_ctrl(stream_t *s, int stop)
     if (stop) {
         if (s->fd != -1) {
             ev_io_stop(s->loop, &s->read_io);
+            __sync_add_and_fetch(&bp_on_rcv, 1);
         }
     } else {
         if (s->fd != -1) {
             ev_io_start(s->loop, &s->read_io);
+            __sync_add_and_fetch(&bp_off_rcv, 1);
         }
     }
 }
@@ -361,7 +394,7 @@ INIT_ROUTINE(static void stream_init_env(void))
     register_stats_cb(stream_stats);
 
     if (!stream_timeout_interval) {
-        stream_timeout_interval = (time(NULL) % 7) + 3;
+        stream_timeout_interval = (time(NULL) % 80) + 120;
     }
     sigset_t mask;
     sigemptyset(&mask);
