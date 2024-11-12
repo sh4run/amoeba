@@ -226,7 +226,7 @@ crypto_error(message_crypto_notify_t *m)
         /* If this is the first packet, crypto-id is not set yet */
         ts->crypto_id = m->crypto_id;
     }
-    stream_free(s);
+    ts->flags |= TRANS_DROP;
     crypto_err++;
     log_info("crypto error received.");
 }
@@ -307,7 +307,7 @@ static void transport_bkpressure(stream_t *s, backpressure_state_t state)
     } else {
         if (ts->downstream_id) {
             send_backpressure(task_transport, ts->peer_task,
-                              ts->downstream_id, ts->upstream_id, state);
+                              ts->downstream_id, (uint64_t)s, state);
         }
     }
 }

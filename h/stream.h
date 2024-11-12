@@ -46,7 +46,7 @@ typedef struct _stream_t {
     uint32_t            io_num;
     netbuf_t           *input;
     queue_t             output_q;
-    int                 output_q_len;
+    uint32_t            output_q_len;
     void               *proto_data;
     int                 obsolete;
     backpressure_state_t    bp_state;

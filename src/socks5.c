@@ -459,8 +459,10 @@ static int socks5_free(stream_t *s, void *m)
 static void socks5_bkpressure(stream_t *s, backpressure_state_t state)
 {
     socks5_stream_t *ss = (socks5_stream_t *)STREAM_PROTO_DATA(s);
-    send_backpressure(task_socks5, ss->target, (uint64_t)s,
-                      ss->upstream_id, state);
+    if (ss->upstream_id) {
+        send_backpressure(task_socks5, ss->target, (uint64_t)s,
+                          ss->upstream_id, state);
+    }
 }
 
 static proto_ctrl_t socks5_ctrl = {

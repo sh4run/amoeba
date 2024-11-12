@@ -19,26 +19,35 @@
 
 #define  DATA_OFFSET    256
 
-#define BKP_ON_THRESHOLD   60
-#define BKP_OFF_THRESHOLD  8
+#define BKP_ON_THRESHOLD   40
+#define BKP_OFF_THRESHOLD  10
+
+//#define QUEUE_MAX_DEBUG
 
 static int stream_timeout_interval;
 
 static int total_streams;
 static int idle_cleaned;
 static uint32_t enqueue_num, dequeue_num;
-static uint32_t bp_on, bp_off;
+#ifdef QUEUE_MAX_DEBUG
+static uint32_t max;
+#endif
+static uint32_t bp_on, bp_on_rcv, bp_off, bp_off_rcv;
 
 static void stream_stats(void)
 {
     printf("Total streams %d, idle cleaned %d\n",
             total_streams, idle_cleaned);
-    printf("enqueue %d, dequeue %d\n", enqueue_num, dequeue_num);
-    printf("backpressure on %d off %d\n", bp_on, bp_off);
+    printf("enqueue %d, dequeue %d", enqueue_num, dequeue_num);
+#ifdef QUEUE_MAX_DEBUG
+    printf(" max %d", max);
+#endif
+    printf("\nbackpressure on %d/%d off %d/%d\n",
+            bp_on, bp_on_rcv, bp_off, bp_off_rcv);
 }
 
 #define SKIP_SHIFT_THRESHOLD   (STREAM_BUF_LEN >> 1)
-static int
+static inline int
 stream_read_cb_internal(struct ev_loop *loop, ev_io *w)
 {
     stream_t *s = STREAM_FROM_READIO(w);
@@ -104,12 +113,12 @@ static void
 stream_read_cb(struct ev_loop *loop, ev_io *w, int revents)
 {
     UNUSED(revents);
-    int i;
+    int i = 0;
 
     while(stream_read_cb_internal(loop, w)) {
-        if (++i > 20) {
-            i = 0;
+        if (++i > 30) {
             sched_yield();
+            break;
         }
     }
 }
@@ -211,6 +220,14 @@ void stream_send(stream_t *s, netbuf_t *nb)
         enqueue(&s->output_q, &nb->elem);
         s->output_q_len++;
         __sync_add_and_fetch(&enqueue_num, 1);
+#ifdef QUEUE_MAX_DEBUG
+        uint32_t old_max = max;
+        __sync_synchronize();
+        if (old_max < s->output_q_len) {
+            __sync_val_compare_and_swap(&max, old_max, s->output_q_len);
+        }
+        __sync_synchronize();
+#endif
     }
 }
 
@@ -313,10 +330,12 @@ void stream_rcv_ctrl(stream_t *s, int stop)
     if (stop) {
         if (s->fd != -1) {
             ev_io_stop(s->loop, &s->read_io);
+            __sync_add_and_fetch(&bp_on_rcv, 1);
         }
     } else {
         if (s->fd != -1) {
             ev_io_start(s->loop, &s->read_io);
+            __sync_add_and_fetch(&bp_off_rcv, 1);
         }
     }
 }
