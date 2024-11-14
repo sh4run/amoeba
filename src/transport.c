@@ -288,7 +288,10 @@ crypto_replay(message_crypto_notify_t *m)
     /* mark to drop following incoming */
     ts->flags |= TRANS_DROP;
     replay++;
-    log_info("replay received.");
+
+    char peer_name[INET6_ADDRSTRLEN+10];
+    stream_peer_name(s, peer_name, sizeof(peer_name));
+    log_info("possible replay from %s.", peer_name);
 }
 
 static void transport_bkpressure(stream_t *s, backpressure_state_t state)

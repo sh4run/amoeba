@@ -34,7 +34,7 @@ A statically-linked binary doesn't have such a requirement. To build a staticall
 ## Deploy
 Generate public/private key with:
 
-    ssh-keygen -b 1024 -m pem -f testkey
+    ssh-keygen -b 1024 -m pem -t rsa -f testkey
     ssh-keygen -m pem -e -f testkey >testkey.pub.pem
 
 Server side:

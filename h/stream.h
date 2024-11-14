@@ -52,7 +52,7 @@ typedef struct _stream_t {
     backpressure_state_t    bp_state;
 } stream_t;
 
-#define VALID_STREAM(s)   ((s)->magic == STREAM_MAGIC && ((s)->proto_data))
+#define VALID_STREAM(s)   ((s) && (s)->magic == STREAM_MAGIC && ((s)->proto_data))
 #define STREAM_FROM_READIO(io) \
         ((stream_t*)((char*)(io) - offsetof(stream_t, read_io)))
 #define STREAM_FROM_WRITEIO(io) \
@@ -66,6 +66,11 @@ typedef struct _stream_t {
 #define TASK_FROM_STREAM(s) \
         (((proto_common_extra_t*) \
             msg_ev_ctx_get_extradata(CTX_FROM_STREAM(s)))->proto_cb->name)
+
+#define stream_peer_name(s, buf, buflen) \
+        if (VALID_STREAM(s) && s->fd != -1) { \
+            get_peer_name(s->fd, buf, buflen); \
+        }
 
 void stream_send (stream_t *s, netbuf_t *nb);
 int stream_free (stream_t *s);

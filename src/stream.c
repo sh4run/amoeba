@@ -100,7 +100,7 @@ stream_read_cb_internal(struct ev_loop *loop, ev_io *w)
         }
     } else {
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            log_info("socket read error(%d)", errno);
+            //log_info("socket read error(%d)", errno);
             ev_io_stop(loop, &s->write_io);
             ev_io_stop(loop, &s->read_io);
             stream_free(s);
@@ -166,7 +166,7 @@ stream_write_cb(struct ev_loop *loop, ev_io *w, int revents)
                 sent_bytes += (int)size;
             } else {
                 if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                    log_info("socket write error(%d)\n", errno);
+                    //log_info("socket write error(%d)\n", errno);
                     /* socket error */
                     ev_io_stop(s->loop, &s->write_io);
                     stream_free(s);
