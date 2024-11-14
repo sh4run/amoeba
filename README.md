@@ -20,7 +20,7 @@ You might need to install gcc, make, git, libev-dev, and libmbedtls-dev before a
 
 A dynamically-linked binary requires libev-dev and libmbedtls-dev to be installed on your target machine(vps). 
 
-To build a statically-linked binary:
+To build a dynamically-linked binary:
 
     git clone --recurse-submodules https://github.com/sh4run/amoeba.git
     cd amoeba
@@ -39,7 +39,8 @@ A statically-linked binary doesn't have such a requirement. To build a staticall
 
 <details>
     <summary>Click for details</summary>
-  
+
+####  
 Generate public/private key with:
 
     ssh-keygen -b 1024 -m pem -t rsa -f testkey -N "" -q
@@ -62,11 +63,12 @@ Please change the config files to suit your own needs.
 <details>
     <summary>Click for details</summary>
 
+####
 After a successful build, you can install amoeba server as a service at your build machine. 
 
     sudo ./install-amoeba-server.sh <port-number>
 
-If your amoeba server is not the same as your build machine, please copy the following files to your target VPS before running the above script. It is better to have your target machine and build machine run the same version of Linux to avoid a possible libc mismatch. 
+If your amoeba server is not running on your build machine, please copy the following files to your target VPS before running the above script. It is better to have your target VPS and build machine run the same version of Linux to avoid a possible libc mismatch. 
 
     client.json
     server.json
