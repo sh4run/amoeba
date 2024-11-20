@@ -239,7 +239,7 @@ upstream_disconnect(message_disconnect_t *msg, msg_ev_ctx_t *ctx)
     }
 }
 
-static void
+static inline void
 upstream_data(message_data_t *msg, msg_ev_ctx_t *ctx)
 {
     UNUSED(ctx);
@@ -320,9 +320,10 @@ msg_handler(message_queue_t *que, message_header_t *header, void *arg)
     }
 }
 
-static int upstream_send_data(upstream_t *u,
-                              stream_t *s,
-                              netbuf_t *nb)
+static inline
+int upstream_send_data(upstream_t *u,
+                       stream_t *s,
+                       netbuf_t *nb)
 {
     message_data_t *m;
     m = (message_data_t*)message_new_encap(task_upstream, MSG_DATA,

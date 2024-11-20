@@ -8,7 +8,7 @@
 #ifndef __MESSAGE_H__
 #define __MESSAGE_H__
 
-#define MESSAGE_DEBUG
+//#define MESSAGE_DEBUG
 
 typedef enum {
     task_null = -1,

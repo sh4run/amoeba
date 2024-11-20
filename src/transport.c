@@ -169,11 +169,12 @@ transport_close_crypto(uint64_t crypto_id,
     }
 }
 
-static int transport_send_data(uint64_t ds_id,
-                               uint64_t us_id,
-                               netbuf_t *nb,
-                               int src,
-                               int target)
+static inline
+int transport_send_data(uint64_t ds_id,
+                        uint64_t us_id,
+                        netbuf_t *nb,
+                        int src,
+                        int target)
 {
     message_data_t *m;
     m = (message_data_t*)message_new_encap(src,
@@ -311,6 +312,8 @@ static void transport_bkpressure(stream_t *s, backpressure_state_t state)
         if (ts->downstream_id) {
             send_backpressure(task_transport, ts->peer_task,
                               ts->downstream_id, (uint64_t)s, state);
+        } else {
+            log_info("bkp no downstream id");
         }
     }
 }
@@ -469,7 +472,7 @@ transport_echo_crypto(transport_stream_t *ts)
     }
 }
 
-static void
+static inline void
 transport_client_send_to_crypto(message_transport_t type,
                                 netbuf_t *nb,
                                 stream_t *s)
@@ -1040,7 +1043,7 @@ static void server_relay_connect(stream_t *s,
     message_send(&m->h, ts->peer_task);
 }
 
-static inline
+static
 int server_relay_data(stream_t *s, netbuf_t **nbp)
 {
     transport_stream_t *ts;

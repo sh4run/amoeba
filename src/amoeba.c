@@ -37,7 +37,7 @@ static void init_random_data(void)
     _rand_data_idx = 0;
 }
 
-static void update_random_data(void)
+static inline void update_random_data(void)
 {
     static int update_idx = 0;
 
@@ -50,7 +50,7 @@ static void update_random_data(void)
     }
 }
 
-static uint8_t *get_random_data(int len)
+static inline uint8_t *get_random_data(int len)
 {
     uint8_t *data;
 
@@ -99,6 +99,7 @@ typedef struct {
     struct list_head             crypto_stream_list;
     const mbedtls_cipher_info_t *amoeba_cipher_info;
     uint64_t                     device_id;
+    uint64_t                     last_epoch;
 } amoeba_client_extra_t;
 
 static uint32_t alloc_num, free_num;
@@ -141,14 +142,14 @@ static void crypto_stats(void)
     printf("crypto: alloc %d, free %d\n", alloc_num, free_num);
 }
 
-static void
+static inline void
 crypto_init_cipher_info(const mbedtls_cipher_info_t **cipher_info)
 {
     *cipher_info = mbedtls_cipher_info_from_type(AMOEBA_CIPHER_TYPE);
     assert(*cipher_info);
 }
 
-static void
+static inline void
 crypto_key_from_password(uint8_t *key, char *password)
 {
     int len = strlen(password);
@@ -218,7 +219,7 @@ crypto_process_data(mbedtls_cipher_context_t *ctx,
     return (int)olen;
 }
 
-static netbuf_t *
+static inline netbuf_t *
 crypto_process_nb(mbedtls_cipher_context_t *ctx, netbuf_t *input)
 {
     netbuf_t *nb;
@@ -241,7 +242,7 @@ crypto_process_nb(mbedtls_cipher_context_t *ctx, netbuf_t *input)
     return nb;
 }
 
-static void
+static inline void
 init_remote_rands(rand_params_t *rands)
 {
     int ret = getrandom(rands, sizeof(rand_params_t), 0);
@@ -257,7 +258,7 @@ init_remote_rands(rand_params_t *rands)
     }
 }
 
-static void
+static inline void
 crypto_notify(crypto_stream_t *cs, int type)
 {
     message_crypto_notify_t *msg;
@@ -273,7 +274,7 @@ crypto_notify(crypto_stream_t *cs, int type)
     }
 }
 
-static void
+static inline void
 crypto_update(message_crypto_notify_t *m)
 {
     crypto_stream_t *cs;
@@ -342,7 +343,7 @@ crypto_stream_free(crypto_stream_t *cs)
     free_num++;
 }
 
-static void
+static inline void
 send_crypto_close_rsp(uint64_t transport_id)
 {
     message_crypto_notify_t *rsp;
@@ -388,9 +389,10 @@ amoeba_asso_req(message_asso_req_t *asso_req, msg_ev_ctx_t *ctx)
     }
 }
 
-static void amoeba_client_data_return(message_transport_t type,
-                                      netbuf_t *nb,
-                                      crypto_stream_t *cs)
+static inline
+void amoeba_client_data_return(message_transport_t type,
+                               netbuf_t *nb,
+                               crypto_stream_t *cs)
 {
     message_crypto_rsp_t *rsp;
     rsp = (message_crypto_rsp_t*)message_new_encap(task_amoeba,
@@ -475,7 +477,8 @@ sha256_exit:
     mbedtls_md_free(&ctx);
 }
 
-static netbuf_t *amoeba_crypto_head_new(crypto_stream_t *cs, uint64_t devid)
+static netbuf_t *amoeba_crypto_head_new(crypto_stream_t *cs,
+                                        amoeba_client_extra_t *extra)
 {
     netbuf_t *nb;
     uint8_t buffer[128];
@@ -510,13 +513,17 @@ static netbuf_t *amoeba_crypto_head_new(crypto_stream_t *cs, uint64_t devid)
     head->tail_len = tail_len;
     head->flags = 0;
     head->reserve = 0;
-    head->device_id = devid;
+    head->device_id = extra->device_id;
 
     struct timeval secs;
     gettimeofday(&secs, NULL);
     head->epoch = secs.tv_sec;
     head->epoch <<= 20;
     head->epoch += secs.tv_usec;
+    if (head->epoch == extra->last_epoch) {
+        head->epoch++;
+    }
+    extra->last_epoch = head->epoch;
     head->epoch = htonll(head->epoch);
 
     head->username_len = strlen(user);
@@ -580,7 +587,7 @@ amoeba_client_encrypt_req(message_crypto_req_t *req, msg_ev_ctx_t *ctx)
             cs->transport_id = req->transport_id;
             list_add(&cs->node, &extra->crypto_stream_list);
             crypto_notify(cs, MSG_CRYPTO_UPDATE);
-            n = amoeba_crypto_head_new(cs, extra->device_id);
+            n = amoeba_crypto_head_new(cs, extra);
             if (!n) {
                 goto cencrypt_error;
             }
@@ -769,6 +776,7 @@ static void *amoeba_client(void *c)
     INIT_LIST_HEAD(&extra->crypto_stream_list);
 
     extra->device_id = client_cfg->device_id;
+    extra->last_epoch = 0;
 
     jcfg_user_t *user;
     foreach_queue(remote_cfg, jcfg_remote_t *, &client_cfg->remote_que) {
@@ -1096,9 +1104,10 @@ sdecrypt_error:
     return -1;
 }
 
-static int server_decrypt_input(crypto_stream_t *cs,
-                                netbuf_t *nb,
-                                amoeba_server_extra_t *extra)
+static inline
+int server_decrypt_input(crypto_stream_t *cs,
+                         netbuf_t *nb,
+                         amoeba_server_extra_t *extra)
 {
     int ret;
     if (cs->rands.data_type || cs->rands.pad_type) {

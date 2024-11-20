@@ -64,11 +64,11 @@ Please change the config files to suit your own needs.
     <summary>Click for details</summary>
 
 ####
-After a successful build, you can install amoeba server as a service at your build machine. 
+After a successful build, you can install amoeba server as a service on your build machine. 
 
     sudo ./install-amoeba-server.sh <port-number>
 
-If your amoeba server is not running on your build machine, please copy the following files to your target VPS before running the above script. It is better to have your target VPS and build machine run the same version of Linux to avoid a possible libc mismatch. 
+If your amoeba server is running on a different machine, please copy the following files to your target machine before running the above script. It is better to keep your target machine and build machine running the same version of Linux to avoid libc mismatch.
 
     client.json
     server.json

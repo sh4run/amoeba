@@ -16,7 +16,7 @@ $(OBJ_DIR):
 
 INC_FLAGS = $(addprefix -I,$(INC_DIR))
 
-CCFLAGS += -Wall -Wextra -Werror -Wmissing-prototypes -g -Wshadow -Wundef -Wcast-align -Wunreachable-code -O1 -std=c11 -D_GNU_SOURCE
+CCFLAGS += -Wall -Wextra -Werror -Wmissing-prototypes -g -Wshadow -Wundef -Wcast-align -Wunreachable-code -O2 -std=c11 -D_GNU_SOURCE
 
 -include $(DEPS)
 

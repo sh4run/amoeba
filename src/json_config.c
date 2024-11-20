@@ -64,12 +64,12 @@ string_to_value(string_value_t *schema, char *string)
     if (string) {
         while(schema[i].string && schema[i].string[0]) {
             if (schema[i].casesntvty) {
-                if (!strncmp(schema[i].string, string, JCONF_MAX_STR)) {
+                if (!strncmp(schema[i].string, string, JCONF_MAX_STR - 1)) {
                     rtn = schema[i].value;
                     break;
                 }
             } else {
-                if (!strncasecmp(schema[i].string, string, JCONF_MAX_STR)) {
+                if (!strncasecmp(schema[i].string, string, JCONF_MAX_STR - 1)) {
                     rtn = schema[i].value;
                     break;
                 }            
@@ -281,8 +281,8 @@ static int parse_client_config(cJSON *module, jcfg_system_t *cfg)
             goto client_error_exit;
         }
 
-        strncpy(r.remote_name, cJSON_GetStringValue(name), JCONF_MAX_STR);
-        strncpy(r.user_name, cJSON_GetStringValue(user), JCONF_MAX_STR);
+        strncpy(r.remote_name, cJSON_GetStringValue(name), JCONF_MAX_STR - 1);
+        strncpy(r.user_name, cJSON_GetStringValue(user), JCONF_MAX_STR - 1);
         /* check if user is configured */
         if (!hashtable_search(cfg->user_cfg, r.user_name)) {
             log_error("user(%s) not configured.\n",
@@ -341,7 +341,7 @@ static int username_compare(hash_head_t *node, void *key)
     char *name = (char*)key;
     jcfg_user_t *user = (jcfg_user_t *)node;
     
-    return strncmp(user->username, name, JCONF_MAX_STR);
+    return strncmp(user->username, name, JCONF_MAX_STR - 1);
 }
 
 int find_user_password(hashtable_t *user_cfg,
@@ -416,9 +416,9 @@ static jcfg_system_t *parse_config(const char *input)
             }
             init_queue(&u->device_q);
             strncpy(u->username, cJSON_GetStringValue(name), 
-                    JCONF_MAX_STR);
+                    JCONF_MAX_STR - 1);
             strncpy(u->password, cJSON_GetStringValue(password), 
-                    JCONF_MAX_STR);
+                    JCONF_MAX_STR - 1);
             hashtable_add(cfg->user_cfg, u, u->username);
             cfg->user_num++;
         }
@@ -447,7 +447,7 @@ static jcfg_system_t *parse_config(const char *input)
         if (cfg->mode == server_mode) {
             cfg->memory_cap = 8;
         } else {
-            cfg->memory_cap = 6;
+            cfg->memory_cap = 8;
         }
     }
 
