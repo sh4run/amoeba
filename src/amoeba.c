@@ -79,6 +79,8 @@ typedef struct {
 
 #define CS_MAGIC            0x7d7d5c5c
 
+#define CS_STOP             0x0001
+
 typedef struct {
     struct list_head    node;
     serverinfo_t        *server;
@@ -92,6 +94,7 @@ typedef struct {
     int                 tail_bytes;
     uint32_t            traffic_idx;
     client_info_t       *client;
+    uint32_t            flags;
 } crypto_stream_t;
 
 typedef struct {
@@ -303,6 +306,7 @@ crypto_stream_new(char *password, const mbedtls_cipher_info_t *cipher_info)
     cs->traffic_idx = 0;
     cs->tail_bytes = 0;
     cs->client = NULL;
+    cs->flags = 0;
 
     if (!password) {
         /* server */
@@ -419,6 +423,10 @@ amoeba_client_decrypt_req(message_crypto_req_t *req, msg_ev_ctx_t *ctx)
     cs = (crypto_stream_t *)req->crypto_id;
     assert(cs->magic == CS_MAGIC);
 
+    if (cs->flags & CS_STOP) {
+        netbuf_free(req->nb);
+        return;
+    }
     if (cs->rands.reply_scramble) {
         if (req->nb->len > cs->rands.reply_scramble) {
             req->nb->offset += cs->rands.reply_scramble;
@@ -434,6 +442,7 @@ amoeba_client_decrypt_req(message_crypto_req_t *req, msg_ev_ctx_t *ctx)
     netbuf_free(req->nb);
     if (n == NULL) {
         /* crypto error */
+        cs->flags |= CS_STOP;
         crypto_notify(cs, MSG_CRYPTO_ERROR);
         return;
     }
@@ -595,6 +604,10 @@ amoeba_client_encrypt_req(message_crypto_req_t *req, msg_ev_ctx_t *ctx)
     }
 
     assert(cs->magic == CS_MAGIC);
+    if (cs->flags & CS_STOP) {
+        netbuf_free(req->nb);
+        return;
+    }
     uint8_t *data = (uint8_t*)NETBUF_START(req->nb);
     int data_left = req->nb->len, ret;
     uint64_t bit;
@@ -690,6 +703,7 @@ amoeba_client_encrypt_req(message_crypto_req_t *req, msg_ev_ctx_t *ctx)
 
 cencrypt_error:
     netbuf_free(req->nb);
+    cs->flags |= CS_STOP;
     crypto_notify(cs, MSG_CRYPTO_ERROR);
     if (n) {
         netbuf_free(n);
@@ -848,7 +862,10 @@ amoeba_server_encrypt_req(message_crypto_req_t *req, msg_ev_ctx_t *ctx)
 
     cs = (crypto_stream_t *)req->crypto_id;
     assert(cs->magic == CS_MAGIC);
-
+    if (cs->flags & CS_STOP) {
+        netbuf_free(req->nb);
+        return;
+    }
     n = crypto_process_nb(&cs->cipher, req->nb);
     netbuf_free(req->nb);
     if (n == NULL) {
@@ -879,6 +896,7 @@ amoeba_server_encrypt_req(message_crypto_req_t *req, msg_ev_ctx_t *ctx)
     return;
 
 sencrypt_error:
+    cs->flags |= CS_STOP;
     crypto_notify(cs, MSG_CRYPTO_ERROR);
     if (n) {
         netbuf_free(n);
@@ -1155,6 +1173,10 @@ amoeba_server_decrypt_req(message_crypto_req_t *req, msg_ev_ctx_t *ctx)
         }
     }
     assert(cs->magic == CS_MAGIC);
+    if (cs->flags & CS_STOP) {
+        netbuf_free(req->nb);
+        return;
+    }
     if (cs->leftover) {
         cs->leftover = netbuf_join(cs->leftover, req->nb);
         assert(cs->leftover);
@@ -1165,11 +1187,13 @@ amoeba_server_decrypt_req(message_crypto_req_t *req, msg_ev_ctx_t *ctx)
     int len;
     while ((len = server_decrypt_input(cs, cs->leftover, extra))) {
         if (len == -2) {
+            cs->flags |= CS_STOP;
             crypto_notify(cs, MSG_CRYPTO_REPLAY);
             break;
         }
         if (len == -1 || len > cs->leftover->len) {
             /* error in decryption */
+            cs->flags |= CS_STOP;
             crypto_notify(cs, MSG_CRYPTO_ERROR);
             break;
         }

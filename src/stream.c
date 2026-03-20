@@ -291,8 +291,8 @@ int stream_free(stream_t *s)
 
         ev_io_stop(s->loop, &s->write_io);
         ev_io_stop(s->loop, &s->read_io);
-        ev_timer_stop(s->loop, &s->idle_timer);
     }
+    ev_timer_stop(s->loop, &s->idle_timer);
 
     if (s->proto_data) {
         if (s->proto_cb->free_cb(s, s->proto_data) != 0) {

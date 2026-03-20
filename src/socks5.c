@@ -149,7 +149,7 @@ static void socks5_disconnect(message_disconnect_t *m,
     }
 }
 
-static void socks5_data(message_data_t *m,
+static inline void socks5_data(message_data_t *m,
                         msg_ev_ctx_t *ctx)
 {
     UNUSED(ctx);
@@ -172,12 +172,16 @@ static void socks5_recv_backpressure(message_backpressure_t* m)
 {
     stream_t *s = (stream_t *)m->downstream_id;
     if (!VALID_STREAM(s)) {
+        log_info("%s stream not valid %lx %x %d from %d", __func__, (uint64_t)s, s->magic,
+                    (m->state == backpressure_on), MSG_SRC(&m->h));
         return;
     }
     socks5_stream_t *ss = (socks5_stream_t*)STREAM_PROTO_DATA(s);
     if ((ss->magic == SS_MAGIC) &&
         (ss->upstream_id == m->upstream_id)) {
         stream_rcv_ctrl(s, (m->state == backpressure_on));
+    } else {
+        log_info("%s %x %lx %lx", __func__, ss->magic, ss->upstream_id, m->upstream_id);
     }
 }
 
@@ -373,7 +377,7 @@ error_close:
     return 0;
 }
 
-static int socks5_relay(stream_t *s, netbuf_t **nb)
+static inline int socks5_relay(stream_t *s, netbuf_t **nb)
 {
     socks5_stream_t *ss = (socks5_stream_t *)STREAM_PROTO_DATA(s);
 
@@ -462,6 +466,8 @@ static void socks5_bkpressure(stream_t *s, backpressure_state_t state)
     if (ss->upstream_id) {
         send_backpressure(task_socks5, ss->target, (uint64_t)s,
                           ss->upstream_id, state);
+    } else {
+        log_info("%s: no upstream id", __func__);
     }
 }
 

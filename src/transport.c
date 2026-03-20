@@ -300,7 +300,8 @@ static void transport_bkpressure(stream_t *s, backpressure_state_t state)
     transport_stream_t *ts;
     ts = (transport_stream_t*)STREAM_PROTO_DATA(s);
 
-    if (ts->flags & CRYPTO_CLOSED) {
+    if (ts->magic != TS_MAGIC) {
+        log_info("bk after ts freed.");
         return;
     }
     if (ts->flags & TRANS_SERVER) {
@@ -324,14 +325,18 @@ static void transport_recv_backpressure(message_backpressure_t* m)
 
     stream_t *s = (stream_t*)m->upstream_id;
     if (!VALID_STREAM(s)) {
+        log_info("invalid stream");
         return;
     }
     ts = STREAM_PROTO_DATA(s);
     if(ts->magic != TS_MAGIC) {
+        log_info("%s: invalid ts", __func__);
         return;
     }
     if (ts->downstream_id == m->downstream_id) {
         stream_rcv_ctrl(s, (m->state == backpressure_on));
+    } else {
+        log_info("downstream mismatch %lx %lx", ts->downstream_id, m->downstream_id);
     }
 }
 
