@@ -1,5 +1,5 @@
 # amoeba
-A proxy derived from SSS(scrambled shadowsocks) with a brand new architecture and a enhanced protocol.
+A proxy derived from SSS([scrambled shadowsocks](https://github.com/sh4run/sss#sss---scrambled-shadowsocks)) with a brand new architecture and an enhanced protocol.
 
 Features include:
 1. Multiple threads.
@@ -14,15 +14,18 @@ Features include:
     <summary>Click for details</summary>
 
 ####
-You might need to install gcc, make, git, libev-dev, and libmbedtls-dev before any following steps.
+You might need to install gcc, make, git, libev-dev, and libmbedtls-dev first.
 
     sudo apt install gcc make git libev-dev libmbedtls-dev
+
+Pull the source code.
+
+    git clone --recurse-submodules https://github.com/sh4run/amoeba.git
 
 A dynamically-linked binary requires libev-dev and libmbedtls-dev to be installed on your target machine(vps). 
 
 To build a dynamically-linked binary:
 
-    git clone --recurse-submodules https://github.com/sh4run/amoeba.git
     cd amoeba
     make
 
